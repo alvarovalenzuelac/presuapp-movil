@@ -38,7 +38,6 @@ class _CategoriaFormScreenState extends State<CategoriaFormScreen> {
     setState(() => _isLoading = true);
     final token = await storage.read(key: 'access_token');
     
-    // Determinamos si es crear (POST) o editar (PUT/PATCH)
     final bool esEdicion = widget.categoria != null;
     
     final url = esEdicion 
@@ -47,9 +46,7 @@ class _CategoriaFormScreenState extends State<CategoriaFormScreen> {
 
     final Map<String, dynamic> bodyData = {
       "nombre": _nombreController.text,
-      // Si estamos editando, mantenemos el padre original, si es nueva hija, usamos padreId
       "categoria_padre": esEdicion ? widget.categoria!['categoria_padre'] : widget.padreId,
-      // Asumimos un tipo por defecto o lo heredamos (ajusta según tu lógica de Django)
       "tipo": "GASTO" 
     };
 
@@ -60,10 +57,30 @@ class _CategoriaFormScreenState extends State<CategoriaFormScreen> {
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         if (mounted) {
-          Navigator.pop(context, true); // Volvemos atrás devolviendo "true" (éxito)
+          Navigator.pop(context, true);
         }
       } else {
-        _mostrarError("Error: ${response.body}");
+        // --- MEJORA: Decodificar el error del backend ---
+        // Django suele responder: {"nombre": ["El mensaje de error"]}
+        String mensajeError = "Ocurrió un error al guardar";
+        
+        try {
+          final errors = jsonDecode(utf8.decode(response.bodyBytes)); // utf8 para acentos
+          if (errors is Map) {
+            // Buscamos si hay error en el campo 'nombre' o error general
+            if (errors.containsKey('nombre')) {
+              mensajeError = errors['nombre'][0];
+            } else if (errors.containsKey('non_field_errors')) {
+              mensajeError = errors['non_field_errors'][0];
+            } else if (errors.containsKey('detail')) {
+              mensajeError = errors['detail'];
+            }
+          }
+        } catch (_) {
+          mensajeError = "Error: ${response.statusCode}";
+        }
+        
+        _mostrarError(mensajeError);
       }
     } catch (e) {
       _mostrarError("Error de conexión: $e");

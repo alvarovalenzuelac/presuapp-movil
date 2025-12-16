@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import 'login_screen.dart';
-import 'gastos_screen.dart'; // <--- Importamos tu nueva pantalla
+import 'gastos_screen.dart';
 import 'categorias_screen.dart';
+import 'metas_screen.dart';
+import 'dashboard_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,9 +18,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // AQUÍ ESTÁ LA LISTA DE PANTALLAS
   final List<Widget> _screens = [
-    const Center(child: Text("Dashboard (Próximamente)")), // Index 0
+    const DashboardScreen(), // Index 0
     const GastosScreen(),                                   // Index 1: TU PANTALLA DE GASTOS REAL
-    const Center(child: Text("Presupuestos (Próximamente)")), // Index 2
+    const MetasScreen(), // Index 2
     const CategoriasScreen(),   // Index 3
   ];
 

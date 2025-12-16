@@ -1,10 +1,9 @@
-// lib/screens/gasto_form_screen.dart
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:intl/intl.dart'; // Agrega intl: ^0.18.0 en pubspec.yaml si no lo tienes
-import '../services/api_config.dart'; // Importa tu nueva config
+import 'package:intl/intl.dart';
+import '../services/api_config.dart';
 
 class GastoFormScreen extends StatefulWidget {
   const GastoFormScreen({super.key});
@@ -22,19 +21,25 @@ class _GastoFormScreenState extends State<GastoFormScreen> {
   final storage = const FlutterSecureStorage();
   
   bool _isLoading = false;
-  List<dynamic> _subcategorias = []; // Solo guardaremos hijas aquí
-  String? _selectedCategoriaId;
+  
+  // LISTAS DE DATOS
+  List<dynamic> _padres = [];              // Solo categorías Padre
+  List<dynamic> _todasSubcategorias = [];  // Todas las hijas disponibles
+  List<dynamic> _subcategoriasFiltradas = []; // Las que mostramos en el 2do dropdown
+
+  // SELECCIONES
+  String? _selectedPadreId;
+  String? _selectedSubcategoriaId;
 
   @override
   void initState() {
     super.initState();
-    // Fecha de hoy por defecto
     _fechaController.text = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    _cargarSubcategorias();
+    _cargarDatosIniciales();
   }
 
-  // 1. Cargar Categorías desde la API
-  Future<void> _cargarSubcategorias() async {
+  // 1. Cargar Categorías y separar Padres/Hijos
+  Future<void> _cargarDatosIniciales() async {
     final token = await storage.read(key: 'access_token');
     try {
       final response = await http.get(
@@ -43,24 +48,48 @@ class _GastoFormScreenState extends State<GastoFormScreen> {
       );
 
       if (response.statusCode == 200) {
-        final List<dynamic> todas = jsonDecode(response.body);
+        final List<dynamic> datos = jsonDecode(response.body); // utf8 si es necesario
+        
         setState(() {
-          // FILTRO: Solo mostramos las que tienen padre (Hijas)
-          // Esto evita que el usuario seleccione "Comida" en general, forzando "Comida > Supermercado"
-          _subcategorias = todas.where((c) => c['categoria_padre'] != null).toList();
+          // A. Filtramos los Padres (categoria_padre == null)
+          _padres = datos.where((c) => c['categoria_padre'] == null).toList();
+          
+          // B. Guardamos todas las Hijas (categoria_padre != null) para filtrar después
+          _todasSubcategorias = datos.where((c) => c['categoria_padre'] != null).toList();
         });
       }
     } catch (e) {
-      print("Error cargando categorías: $e");
+      debugPrint("Error cargando categorías: $e");
     }
   }
 
-  // 2. Guardar Gasto
+  // 2. Lógica al seleccionar un Padre
+  void _onPadreChanged(String? nuevoPadreId) {
+    setState(() {
+      _selectedPadreId = nuevoPadreId;
+      
+      // Reiniciamos la subcategoría porque cambió el grupo
+      _selectedSubcategoriaId = null;
+      
+      // Filtramos: Mostramos solo las hijas que pertenezcan a este padre ID
+      if (nuevoPadreId != null) {
+        _subcategoriasFiltradas = _todasSubcategorias.where((hijo) {
+          // La API devuelve números, convertimos a String para comparar seguro
+          return hijo['categoria_padre'].toString() == nuevoPadreId;
+        }).toList();
+      } else {
+        _subcategoriasFiltradas = [];
+      }
+    });
+  }
+
+  // 3. Guardar Gasto
   Future<void> _guardarGasto() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedCategoriaId == null) {
+    
+    if (_selectedSubcategoriaId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor selecciona una categoría'))
+        const SnackBar(content: Text('Debes seleccionar una subcategoría final'))
       );
       return;
     }
@@ -69,11 +98,11 @@ class _GastoFormScreenState extends State<GastoFormScreen> {
     final token = await storage.read(key: 'access_token');
 
     final bodyData = {
-      "tipo": "GASTO", // Por ahora fijo, luego puedes poner un switch Gasto/Ingreso
+      "tipo": "GASTO",
       "monto": _montoController.text,
       "descripcion": _descController.text,
       "fecha": _fechaController.text,
-      "categoria": _selectedCategoriaId // Enviamos el ID
+      "categoria": _selectedSubcategoriaId // Enviamos el ID de la hija
     };
 
     try {
@@ -87,17 +116,16 @@ class _GastoFormScreenState extends State<GastoFormScreen> {
       );
 
       if (response.statusCode == 201) {
-        if (mounted) Navigator.pop(context, true); // Regresar con éxito
+        if (mounted) Navigator.pop(context, true);
       } else {
-        final err = jsonDecode(response.body);
-        // Aquí mostramos el error que manda Django (ej: "Monto debe ser positivo")
+        // Manejo de error simple
         ScaffoldMessenger.of(context).showSnackBar(
-           SnackBar(content: Text("Error: $err"), backgroundColor: Colors.red)
+           SnackBar(content: Text("Error: ${response.body}"), backgroundColor: Colors.red)
         );
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-         SnackBar(content: Text("Error de conexión: $e"))
+         const SnackBar(content: Text("Error de conexión"))
       );
     } finally {
       setState(() => _isLoading = false);
@@ -107,14 +135,18 @@ class _GastoFormScreenState extends State<GastoFormScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Registrar Gasto"), backgroundColor: Colors.green, foregroundColor: Colors.white),
+      appBar: AppBar(
+        title: const Text("Registrar Gasto"), 
+        backgroundColor: Colors.green, 
+        foregroundColor: Colors.white
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Form(
           key: _formKey,
           child: ListView(
             children: [
-              // CAMPO MONTO
+              // --- MONTO ---
               TextFormField(
                 controller: _montoController,
                 keyboardType: TextInputType.number,
@@ -125,14 +157,13 @@ class _GastoFormScreenState extends State<GastoFormScreen> {
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty) return 'Ingresa un monto';
-                  // VALIDACIÓN FRONTEND: No permitir negativos
-                  if (double.tryParse(value)! <= 0) return 'El monto debe ser mayor a 0';
+                  if (double.tryParse(value)! <= 0) return 'El monto debe ser positivo';
                   return null;
                 },
               ),
               const SizedBox(height: 16),
 
-              // SELECTOR DE FECHA
+              // --- FECHA ---
               TextFormField(
                 controller: _fechaController,
                 readOnly: true,
@@ -155,25 +186,54 @@ class _GastoFormScreenState extends State<GastoFormScreen> {
               ),
               const SizedBox(height: 16),
 
-              // DROPDOWN CATEGORÍAS
+              // --- DROPDOWN 1: CATEGORÍA PADRE (Filtro) ---
               DropdownButtonFormField<String>(
-                value: _selectedCategoriaId,
+                value: _selectedPadreId,
                 decoration: const InputDecoration(
-                  labelText: "Subcategoría",
+                  labelText: "Categoría Principal",
                   border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.category),
+                  prefixIcon: Icon(Icons.folder),
                 ),
-                items: _subcategorias.map<DropdownMenuItem<String>>((cat) {
+                hint: const Text("Ej: Comida, Vivienda..."),
+                items: _padres.map<DropdownMenuItem<String>>((cat) {
                   return DropdownMenuItem(
                     value: cat['id'].toString(),
                     child: Text(cat['nombre']),
                   );
                 }).toList(),
-                onChanged: (val) => setState(() => _selectedCategoriaId = val),
+                onChanged: _onPadreChanged, // Llamamos a nuestra función de filtro
               ),
               const SizedBox(height: 16),
 
-              // CAMPO DESCRIPCIÓN
+              // --- DROPDOWN 2: SUBCATEGORÍA (Selección Final) ---
+              DropdownButtonFormField<String>(
+                value: _selectedSubcategoriaId,
+                // Si no hay padre seleccionado, deshabilitamos este campo visualmente
+                decoration: InputDecoration(
+                  labelText: "Subcategoría",
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.category),
+                  enabled: _selectedPadreId != null, // Deshabilitado si es null
+                  filled: _selectedPadreId == null,
+                  fillColor: Colors.grey[200],
+                ),
+                hint: Text(_selectedPadreId == null 
+                    ? "Selecciona primero la principal" 
+                    : "Selecciona una opción..."),
+                // Usamos la lista FILTRADA
+                items: _subcategoriasFiltradas.map<DropdownMenuItem<String>>((cat) {
+                  return DropdownMenuItem(
+                    value: cat['id'].toString(),
+                    child: Text(cat['nombre']),
+                  );
+                }).toList(),
+                onChanged: _selectedPadreId == null 
+                    ? null // Bloqueamos interacción si no hay padre
+                    : (val) => setState(() => _selectedSubcategoriaId = val),
+              ),
+              const SizedBox(height: 16),
+
+              // --- DESCRIPCIÓN ---
               TextFormField(
                 controller: _descController,
                 decoration: const InputDecoration(
@@ -184,7 +244,7 @@ class _GastoFormScreenState extends State<GastoFormScreen> {
               ),
               const SizedBox(height: 24),
 
-              // BOTÓN GUARDAR
+              // --- BOTÓN ---
               SizedBox(
                 height: 50,
                 child: ElevatedButton(

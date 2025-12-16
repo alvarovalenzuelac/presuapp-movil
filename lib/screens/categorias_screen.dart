@@ -250,12 +250,7 @@ class _CategoriasScreenState extends State<CategoriasScreen> {
           );
         },
       ),
-      // BOTÓN FLOTANTE PRINCIPAL (Crear Padre Nuevo)
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _irAlFormulario(), 
-        backgroundColor: Colors.green,
-        child: const Icon(Icons.add_home_work, color: Colors.white),
-      ),
+
     );
   }
 }
