@@ -72,10 +72,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   // 1. TARJETAS DE TOTALES
                   Row(
                     children: [
-                      _buildCard("Ingresos", totales['ingresos'], Colors.green),
+                      // CAMBIO: Mostramos Presupuesto Global (Azul) en vez de Ingresos
+                      _buildCard(
+                        "Presupuesto Global", 
+                        totales['presupuesto_global'] ?? 0, 
+                        Colors.blueAccent
+                      ),
                       const SizedBox(width: 12),
                       _buildCard("Gastos", totales['gastos'], Colors.red),
                     ],
+                  ),
+                  const SizedBox(height: 12),
+                  
+                  // CAMBIO: El saldo ahora refleja lo disponible del presupuesto
+                  _buildCard(
+                    "Disponible del Global", 
+                    totales['saldo'], 
+                    (totales['saldo'] ?? 0) < 0 ? Colors.black : Colors.green, // Negro si es negativo
+                    fullWidth: true
                   ),
                   const SizedBox(height: 12),
                   _buildCard("Saldo Disponible", totales['saldo'], Colors.blue, fullWidth: true),
